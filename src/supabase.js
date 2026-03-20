@@ -5,8 +5,10 @@ const SUPABASE_ANON_KEY = 'sb_publishable_RIRb0139L7UWNFOkx_XPGg_hGIW3ELq';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    persistSession: true,
+    storage: window.localStorage,
+    storageKey: 'pgx-auth',
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    persistSession: true,
+    detectSessionInUrl: false,
   },
 });
