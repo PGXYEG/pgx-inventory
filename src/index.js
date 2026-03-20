@@ -57,7 +57,7 @@ function Root() {
     });
 
     return () => subscription.unsubscribe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
