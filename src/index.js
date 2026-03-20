@@ -4,55 +4,37 @@ import { supabase } from './supabase';
 import Auth from './Auth';
 import App from './App';
 
+// Hardcoded team ID — avoids extra DB query on load
+const TEAM_ID = 'bca245a1-cb3d-45db-aa81-128a5c617e50';
+
 function Root() {
-  const [session, setSession] = useState(undefined);
-  const [teamId, setTeamId]   = useState(null);
+  const [state, setState] = useState('loading'); // 'loading' | 'auth' | 'ready'
+  const [user, setUser]   = useState(null);
 
   async function ensureTeamMember(userId) {
     try {
-      // Get the shared team
-      const { data: teams, error: teamErr } = await supabase
-        .from('team')
-        .select('id')
-        .limit(1);
-
-      if (teamErr || !teams || teams.length === 0) {
-        console.error('Could not find team:', teamErr);
-        return null;
-      }
-
-      const tid = teams[0].id;
-
-      // Add user to team if not already a member
       await supabase
         .from('team_members')
-        .upsert({ team_id: tid, user_id: userId }, { onConflict: 'team_id,user_id', ignoreDuplicates: true });
-
-      return tid;
+        .upsert(
+          { team_id: TEAM_ID, user_id: userId },
+          { onConflict: 'team_id,user_id', ignoreDuplicates: true }
+        );
     } catch (err) {
       console.error('ensureTeamMember error:', err);
-      return null;
     }
   }
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        const tid = await ensureTeamMember(session.user.id);
-        setTeamId(tid);
-      }
-    });
-
-    // Listen for auth changes (login, logout, token refresh)
+    // Only use onAuthStateChange — avoids the getSession() + onAuthStateChange
+    // lock conflict that was causing the infinite loading screen
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      if (session) {
-        const tid = await ensureTeamMember(session.user.id);
-        setTeamId(tid);
+      if (session && session.user) {
+        setUser(session.user);
+        await ensureTeamMember(session.user.id);
+        setState('ready');
       } else {
-        setTeamId(null);
+        setUser(null);
+        setState('auth');
       }
     });
 
@@ -60,32 +42,21 @@ function Root() {
   }, []);
 
   async function handleSignOut() {
+    setState('loading');
     await supabase.auth.signOut();
   }
 
-  // Still loading session
-  if (session === undefined) {
+  if (state === 'loading') {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#1a4a2e', color: '#faf8f4', fontSize: 18, fontFamily: 'Georgia, serif', gap: 12 }}>
-        <span style={{ fontSize: 28 }}>⛳</span> Loading…
+        <span style={{ fontSize: 28 }}>⛳</span> Loading...
       </div>
     );
   }
 
-  // Session exists but team not loaded yet
-  if (session && !teamId) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#1a4a2e', color: '#faf8f4', fontSize: 18, fontFamily: 'Georgia, serif', gap: 12 }}>
-        <span style={{ fontSize: 28 }}>⛳</span> Loading…
-      </div>
-    );
-  }
+  if (state === 'auth') return <Auth />;
 
-  // Not logged in
-  if (!session) return <Auth />;
-
-  // Logged in and team loaded
-  return <App user={session.user} teamId={teamId} onSignOut={handleSignOut} />;
+  return <App user={user} teamId={TEAM_ID} onSignOut={handleSignOut} />;
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
