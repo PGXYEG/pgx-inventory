@@ -21,9 +21,14 @@ function Root() {
     }
   }
 
-  async function initSession() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
+  useEffect(() => {
+    // Hard timeout — if nothing resolves in 4 seconds, show login screen
+    const timeout = setTimeout(() => {
+      setState(s => s === 'loading' ? 'auth' : s);
+    }, 4000);
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(timeout);
       if (session && session.user) {
         setUser(session.user);
         await ensureTeamMember(session.user.id);
@@ -31,17 +36,11 @@ function Root() {
       } else {
         setState('auth');
       }
-    } catch (err) {
-      console.error('initSession error:', err);
+    }).catch(() => {
+      clearTimeout(timeout);
       setState('auth');
-    }
-  }
+    });
 
-  useEffect(() => {
-    // Immediately check session on load
-    initSession();
-
-    // Also listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session && session.user) {
         setUser(session.user);
@@ -53,7 +52,10 @@ function Root() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []); // eslint-disable-line
 
   async function handleSignOut() {
